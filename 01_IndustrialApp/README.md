@@ -8,3 +8,11 @@
   - Полученные результаты
 
 С описанием можно ознакомиться в `./Task#1.pdf`.
+<br>
+<br>
+
+# Ссылки на источники
+  1. https://www.roscosmos.ru/28646/
+  2. https://www.roscosmos.ru/media/pdf/dzz/dzz_2_2022_fine.pdf
+  3. https://www.roscosmos.ru/25638/
+  4. https://terratech.ru/
