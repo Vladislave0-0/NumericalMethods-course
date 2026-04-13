@@ -67,7 +67,7 @@ def two_level_validation(test_func, iterations=50, size=1024):
         bits = generate_random_bits(size)
         p_values.append(test_func(bits))
     
-    # Проверка набора p-values на равномерность (KS-тест)
+    # Проверка набора p-values на равномерность (использую KS-тест)
     _, final_p = stats.kstest(p_values, 'uniform')
     return final_p
 
