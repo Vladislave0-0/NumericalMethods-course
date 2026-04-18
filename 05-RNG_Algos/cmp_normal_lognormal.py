@@ -7,7 +7,7 @@ def normal_pdf(x, mu, sigma):
 def lognormal_pdf(x, mu, sigma):
     return (1 / (x * sigma * np.sqrt(2 * np.pi))) * np.exp(-((np.log(x) - mu)**2) / (2 * sigma**2))
 
-def demo_normal_lognormal(n_sample=100_000, mu=0.5, sigma=0.5):
+def cmp_normal_lognormal(n_sample, mu, sigma):
     z = np.random.standard_normal(n_sample) 
     g = mu + sigma * z
     L = np.exp(g)
@@ -30,17 +30,16 @@ def demo_normal_lognormal(n_sample=100_000, mu=0.5, sigma=0.5):
     axes[1].grid(True, ls="--", alpha=0.5)
     axes[1].legend()
 
-    axes[2].hist(log_L, bins=60, density=True, alpha=0.6, color="coral")
+    axes[2].hist(log_L, bins=60, density=True, alpha=0.6, color="steelblue")
     axes[2].plot(gx, normal_pdf(gx, mu, sigma), "r-", lw=2, label=r"$N(\mu,\sigma^2)$")
-    axes[2].set_title(r"$\ln L$")
+    axes[2].set_title(r"$\ln(L)$")
     axes[2].grid(True, ls="--", alpha=0.5)
     axes[2].legend()
 
-    plt.suptitle(rf"Связь распределений ($\mu={mu}$, $\sigma={sigma}$, $n={n_sample}$)", fontsize=14)
     plt.tight_layout()
     
-    plt.savefig('dist_comparison.png', dpi=200)
+    plt.savefig('cmp_normal_lognormal.png', dpi=200)
     plt.close()
 
 if __name__ == "__main__":
-    demo_normal_lognormal()
+    cmp_normal_lognormal(100000, 0.5, 0.5)
