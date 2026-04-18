@@ -2,12 +2,14 @@ import numpy as np
 from scipy import stats
 from scipy.special import erfc
 
+GLOBAL_SEED = 42
+
 
 # Работаю с uint32
-def generate_random_bits(n_bits):
+def generate_random_bits(n_bits, rng):
     # Вычисляем, сколько чисел нужно для получения n_bits и генерируем эти случайные числа
     n_uint32 = int(np.ceil(n_bits / 32))
-    raw_integers = np.random.randint(0, 2**32, size=n_uint32, dtype=np.uint32)
+    raw_integers = rng.integers(0, 2**32, size=n_uint32, dtype=np.uint32)
     bits = np.unpackbits(raw_integers.view(np.uint8))
 
     return bits[:n_bits].astype(np.int8)
@@ -73,10 +75,12 @@ def run_gaps_test(bits):
     return p_value
 
 
-def two_level_validation(test_func, size, iterations=100):
+def two_level_validation(test_func, size, seed=GLOBAL_SEED, iterations=100):
+    local_rng = np.random.default_rng(seed)
+
     p_values = []
     for _ in range(iterations):
-        bits = generate_random_bits(size)
+        bits = generate_random_bits(size, local_rng)
         p_values.append(test_func(bits))
 
     # Проверка набора p-values на равномерность (использую KS-тест)
@@ -85,10 +89,9 @@ def two_level_validation(test_func, size, iterations=100):
 
 
 if __name__ == "__main__":
-    np.random.seed(42)
     print("Результаты двухуровневого тестирования битов:")
 
-    p_fourier = two_level_validation(run_fourier_test, size=1000)
+    p_fourier = two_level_validation(run_fourier_test, size=4096)
     print(f"1. Тест Фурье: p = {p_fourier:.5f}")
 
     p_auto = two_level_validation(run_autocorrelation_test, size=1000)
