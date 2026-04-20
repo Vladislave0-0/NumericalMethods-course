@@ -5,12 +5,15 @@ from scipy.special import erfc
 GLOBAL_SEED = 42
 
 
-# Работаю с uint32
+# Работаю с uint64 из bit_generator
 def generate_random_bits(n_bits, rng):
     # Вычисляем, сколько чисел нужно для получения n_bits и генерируем эти случайные числа
-    n_uint32 = int(np.ceil(n_bits / 32))
-    raw_integers = rng.integers(0, 2**32, size=n_uint32, dtype=np.uint32)
-    bits = np.unpackbits(raw_integers.view(np.uint8))
+    n_words = int(np.ceil(n_bits / 64))
+    raw_words = np.empty(n_words, dtype=np.uint64)
+
+    for i in range(n_words):
+        raw_words[i] = rng.bit_generator.random_raw()
+    bits = np.unpackbits(raw_words.view(np.uint8))
 
     return bits[:n_bits].astype(np.int8)
 
