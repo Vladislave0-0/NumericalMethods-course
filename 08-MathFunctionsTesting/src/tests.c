@@ -12,7 +12,8 @@ extern float logf(float);
 test_result verify_flags(float x, float exp_res, int exp_errno, int exp_flag,
                          const char *label) {
   test_result res;
-  strncpy(res.label, label, 24);
+  memset(res.label, 0, sizeof(res.label));
+  strncpy(res.label, label, sizeof(res.label) - 1);
 
   errno = 0;
   feclearexcept(FE_ALL_EXCEPT);
@@ -117,7 +118,7 @@ void test_precision() {
 void test_intervals() {
   printf(BLU "\nRunning Interval Precision Tests (3.5 ULP limit):\n" RST);
 
-  const int POINTS_PER_INTERVAL = 1000;
+  const int POINTS_PER_INTERVAL = 10000;
   const float MAX_RELEVANT_ULP = 4.0;
   int total_intervals = 0, failed_intervals = 0;
   double max_ulp = 0.0;
