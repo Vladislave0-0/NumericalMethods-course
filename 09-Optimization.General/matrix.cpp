@@ -1,15 +1,9 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <immintrin.h>
 #include <string>
 #include <vector>
-
-#include <immintrin.h> // For AVX2, FMA
-#ifdef _MSC_VER
-#include <intrin.h> // For MSVC
-#else
-#include <x86intrin.h> // For GCC/Clang (Linux/macOS)
-#endif
 
 #define BLU "\x1B[34m"
 #define GRN "\x1B[32m"
