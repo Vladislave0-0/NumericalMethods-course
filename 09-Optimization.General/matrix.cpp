@@ -1,8 +1,8 @@
-#include <cmath>
 #include <cstring>
 #include <immintrin.h>
 #include <string>
 #include <time.h>
+#include <tuple>
 #include <vector>
 
 #define BLU "\x1B[34m"
@@ -11,16 +11,10 @@
 #define YEL "\x1B[33m"
 #define RST "\x1B[0m"
 
-struct matmul_result {
-  char method[24];
-  unsigned long long ticks;
-  double speedup;
-  int correct;
-};
-
-struct BenchmarkResult {
+struct Result {
   std::string name;
   unsigned long long ticks;
+  double speedup = 1.0;
   bool correct;
 };
 
@@ -29,64 +23,24 @@ void fill_random(float *mat, int size) {
     mat[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 }
 
-void print_matmul_table(const char *size_label, matmul_result *results,
-                        int count) {
+void print_table(const char *size_label, const std::vector<Result> &results) {
   printf("\n" YEL "Matrix size: %s" RST "\n", size_label);
-  printf(BLU "┌──────────────┬────────────┬──────────┬─────────┐" RST "\n");
-  printf(BLU "│" RST " %-12s " BLU "│" RST " %-10s " BLU "│" RST " %-7s " BLU
+  printf(BLU "┌────────────────┬────────────┬──────────┬─────────┐" RST "\n");
+  printf(BLU "│" RST " %-14s " BLU "│" RST " %-10s " BLU "│" RST " %-8s " BLU
              "│" RST " %-7s " BLU "│" RST "\n",
-         "   Method", "   Ticks", " Speedup", "Correct");
-  printf(BLU "├──────────────┼────────────┼──────────┼─────────┤" RST "\n");
+         "Method", "Ticks", "Speedup", "Correct");
+  printf(BLU "├────────────────┼────────────┼──────────┼─────────┤" RST "\n");
 
-  for (int i = 0; i < count; ++i) {
-    const char *speed_color = (results[i].speedup > 1.05)
-                                  ? GRN
-                                  : (results[i].speedup < 0.95 ? RED : RST);
+  for (const auto &res : results) {
+    const char *speed_color =
+        (res.speedup > 1.05) ? GRN : (res.speedup < 0.95 ? RED : RST);
 
-    printf(BLU "│" RST " %-12s " BLU "│" RST " %-10llu " BLU "│"
-               "%s"
-               " %-7.2fx " RST BLU "│" RST " %-5s  " BLU "│" RST "\n",
-           results[i].method, results[i].ticks, speed_color, results[i].speedup,
-           results[i].correct ? GRN "  YES " RST : RED "  FAIL" RST);
+    printf(BLU "│" RST " %-14s " BLU "│" RST " %-10llu " BLU "│"
+               "%s %-7.2fx " RST BLU "│" RST " %-7s " BLU "│" RST "\n",
+           res.name.c_str(), res.ticks, speed_color, res.speedup,
+           res.correct ? GRN "  YES  " RST : RED "  FAIL " RST);
   }
-
-  printf(BLU "└──────────────┴────────────┴──────────┴─────────┘" RST "\n");
-}
-
-template <typename F>
-BenchmarkResult run_test(const std::string &name, F &&func, int M, int K, int N,
-                         const float *A, const float *B, const float *ref_C) {
-
-  int size_C = M * N;
-  float *C = (float *)aligned_alloc(64, size_C * sizeof(float));
-
-  // Matrix zeroing
-  for (int i = 0; i < size_C; ++i)
-    C[i] = 0.0f;
-
-  // Warming up the cache
-  func(M, K, N, A, B, C);
-  for (int i = 0; i < size_C; ++i)
-    C[i] = 0.0f;
-
-  // Measure tacts
-  unsigned long long start = __rdtsc();
-  func(M, K, N, A, B, C);
-  unsigned long long end = __rdtsc();
-
-  // Correctness check
-  bool ok = true;
-  for (int i = 0; i < size_C; ++i) {
-    if (std::abs(ref_C[i] - C[i]) > 1e-3f) {
-      ok = false;
-      break;
-    }
-  }
-
-  unsigned long long total_ticks = end - start;
-  free(C);
-
-  return {name, total_ticks, ok};
+  printf(BLU "└────────────────┴────────────┴──────────┴─────────┘" RST "\n");
 }
 
 void matmul_naive(int M, int K, int N, const float *A, const float *B,
@@ -187,15 +141,49 @@ void matmul_multi_reg(int M, int K, int N, const float *__restrict A,
   }
 }
 
+template <typename F>
+Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
+                const float *B, const float *ref_C, int iterations = 10) {
+  int size_C = M * N;
+  float *C = (float *)aligned_alloc(64, size_C * sizeof(float));
+
+  // Warming up the cache
+  memset(C, 0, size_C * sizeof(float));
+  func(M, K, N, A, B, C);
+
+  // Correctness check
+  bool all_ok = true;
+  for (int i = 0; i < size_C; ++i) {
+    if (std::abs(ref_C[i] - C[i]) > 1e-3f) {
+      all_ok = false;
+      break;
+    }
+  }
+
+  unsigned long long total_ticks = 0;
+  for (int it = 0; it < iterations; ++it) {
+    memset(C, 0, size_C * sizeof(float));
+
+    // Measure tacts
+    unsigned long long start = __rdtsc();
+    std::forward<F>(func)(M, K, N, A, B, C);
+    unsigned long long end = __rdtsc();
+
+    total_ticks += (end - start);
+  }
+
+  free(C);
+  return {std::move(name), total_ticks / iterations, 1.0, all_ok};
+}
+
 int main() {
   srand(static_cast<unsigned>(time(NULL)));
 
-  std::vector<std::pair<int, int>> dim_pairs = {
-      {32, 32}, {64, 64}, {128, 128}, {256, 256}, {512, 512}, {1024, 1024}};
+  std::vector<std::tuple<int, int, int>> dims = {
+      {32, 32, 32},    {64, 64, 64},    {128, 128, 128},
+      {256, 256, 256}, {512, 512, 512}, {1024, 1024, 1024}};
 
-  for (auto &dims : dim_pairs) {
-    int M = dims.first, K = dims.first, N = dims.second;
-
+  for (const auto &[M, K, N] : dims) {
     float *A = (float *)aligned_alloc(64, M * K * sizeof(float));
     float *B = (float *)aligned_alloc(64, K * N * sizeof(float));
     float *ref_C = (float *)aligned_alloc(64, M * N * sizeof(float));
@@ -205,33 +193,31 @@ int main() {
 
     // Reference
     memset(ref_C, 0, M * N * sizeof(float));
-    matmul_optimized(M, K, N, A, B, ref_C);
+    matmul_naive(M, K, N, A, B, ref_C);
 
-    matmul_result table_data[4];
+    std::vector<Result> results;
+    unsigned long long base_ticks = 0;
 
-    auto res_naive =
-        run_test("MatMul naive", matmul_naive, M, K, N, A, B, ref_C);
-    unsigned long long base_ticks = res_naive.ticks;
+    auto run_and_store = [&](std::string name, auto func) {
+      Result res = run_test(name, func, M, K, N, A, B, ref_C);
 
-    auto collect = [&](int idx, BenchmarkResult res) {
-      strncpy(table_data[idx].method, res.name.c_str(),
-              sizeof(table_data[idx].method) - 1);
-      table_data[idx].method[sizeof(table_data[idx].method) - 1] = '\0';
+      if (results.empty()) // First run => it is matmul_naive
+        base_ticks = res.ticks;
 
-      table_data[idx].ticks = res.ticks;
-      table_data[idx].speedup =
-          (base_ticks > 0) ? (double)base_ticks / res.ticks : 1.0;
-      table_data[idx].correct = res.correct;
+      if (base_ticks > 0)
+        res.speedup = static_cast<double>(base_ticks) / res.ticks;
+
+      results.push_back(std::move(res));
     };
 
-    collect(0, res_naive);
-    collect(1, run_test("MatMul opt", matmul_optimized, M, K, N, A, B, ref_C));
-    collect(2, run_test("AVX2 + FMA", matmul_avx2, M, K, N, A, B, ref_C));
-    collect(3, run_test("MatMul reg", matmul_multi_reg, M, K, N, A, B, ref_C));
+    run_and_store("MatMul naive", matmul_naive);
+    run_and_store("MatMul opt", matmul_optimized);
+    run_and_store("AVX2 + FMA", matmul_avx2);
+    run_and_store("MatMul reg", matmul_multi_reg);
 
     char size_str[32];
     sprintf(size_str, "%dx%dx%d", M, K, N);
-    print_matmul_table(size_str, table_data, 4);
+    print_table(size_str, results);
 
     free(A);
     free(B);
