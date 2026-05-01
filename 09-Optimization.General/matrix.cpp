@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <immintrin.h>
 #include <string>
@@ -143,12 +144,12 @@ void matmul_multi_reg(int M, int K, int N, const float *__restrict A,
 
 template <typename F>
 Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
-                const float *B, const float *ref_C, int iterations = 10) {
+                const float *B, const float *ref_C, int iterations = 11) {
   int size_C = M * N;
   float *C = (float *)aligned_alloc(64, size_C * sizeof(float));
 
   // Warming up the cache
-  memset(C, 0, size_C * sizeof(float));
+  std::fill(C, C + size_C, 0.0f);
   func(M, K, N, A, B, C);
 
   // Correctness check
@@ -160,20 +161,25 @@ Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
     }
   }
 
-  unsigned long long total_ticks = 0;
+  std::vector<unsigned long long> results;
+  results.reserve(iterations);
+
   for (int it = 0; it < iterations; ++it) {
-    memset(C, 0, size_C * sizeof(float));
+    std::fill(C, C + size_C, 0.0f);
 
     // Measure tacts
     unsigned long long start = __rdtsc();
     std::forward<F>(func)(M, K, N, A, B, C);
     unsigned long long end = __rdtsc();
 
-    total_ticks += (end - start);
+    results.push_back(end - start);
   }
 
+  std::sort(results.begin(), results.end());
+  unsigned long long median_ticks = results[iterations / 2];
+
   free(C);
-  return {std::move(name), total_ticks / iterations, 1.0, all_ok};
+  return {std::move(name), median_ticks, 1.0, all_ok};
 }
 
 int main() {
