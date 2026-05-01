@@ -1,8 +1,8 @@
 #include <cmath>
 #include <cstring>
-#include <functional>
 #include <immintrin.h>
 #include <string>
+#include <time.h>
 #include <vector>
 
 #define BLU "\x1B[34m"
@@ -24,9 +24,6 @@ struct BenchmarkResult {
   bool correct;
 };
 
-using MatMulFunc =
-    std::function<void(int, int, int, const float *, const float *, float *)>;
-
 void fill_random(float *mat, int size) {
   for (int i = 0; i < size; ++i)
     mat[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
@@ -34,7 +31,7 @@ void fill_random(float *mat, int size) {
 
 void print_matmul_table(const char *size_label, matmul_result *results,
                         int count) {
-  printf("\n" YEL "Testing Size: %s" RST "\n", size_label);
+  printf("\n" YEL "Matrix size: %s" RST "\n", size_label);
   printf(BLU "┌──────────────┬────────────┬──────────┬─────────┐" RST "\n");
   printf(BLU "│" RST " %-12s " BLU "│" RST " %-10s " BLU "│" RST " %-7s " BLU
              "│" RST " %-7s " BLU "│" RST "\n",
@@ -56,9 +53,9 @@ void print_matmul_table(const char *size_label, matmul_result *results,
   printf(BLU "└──────────────┴────────────┴──────────┴─────────┘" RST "\n");
 }
 
-BenchmarkResult run_test(const std::string &name, MatMulFunc func, int M, int K,
-                         int N, const float *A, const float *B,
-                         const float *ref_C) {
+template <typename F>
+BenchmarkResult run_test(const std::string &name, F &&func, int M, int K, int N,
+                         const float *A, const float *B, const float *ref_C) {
 
   int size_C = M * N;
   float *C = (float *)aligned_alloc(64, size_C * sizeof(float));
@@ -191,14 +188,10 @@ void matmul_multi_reg(int M, int K, int N, const float *__restrict A,
 }
 
 int main() {
+  srand(static_cast<unsigned>(time(NULL)));
+
   std::vector<std::pair<int, int>> dim_pairs = {
       {32, 32}, {64, 64}, {128, 128}, {256, 256}, {512, 512}, {1024, 1024}};
-
-  std::vector<std::pair<std::string, MatMulFunc>> methods = {
-      {"MatMul naive", matmul_naive},
-      {"MatMul opt", matmul_optimized},
-      {"AVX2 + FMA", matmul_avx2},
-      {"MatMul reg", matmul_multi_reg}};
 
   for (auto &dims : dim_pairs) {
     int M = dims.first, K = dims.first, N = dims.second;
@@ -211,24 +204,30 @@ int main() {
     fill_random(B, K * N);
 
     // Reference
-    matmul_naive(M, K, N, A, B, ref_C);
+    memset(ref_C, 0, M * N * sizeof(float));
+    matmul_optimized(M, K, N, A, B, ref_C);
 
     matmul_result table_data[4];
-    unsigned long long naive_ticks = 0;
 
-    for (size_t i = 0; i < methods.size(); ++i) {
-      auto res =
-          run_test(methods[i].first, methods[i].second, M, K, N, A, B, ref_C);
+    auto res_naive =
+        run_test("MatMul naive", matmul_naive, M, K, N, A, B, ref_C);
+    unsigned long long base_ticks = res_naive.ticks;
 
-      if (i == 0)
-        naive_ticks = res.ticks;
+    auto collect = [&](int idx, BenchmarkResult res) {
+      strncpy(table_data[idx].method, res.name.c_str(),
+              sizeof(table_data[idx].method) - 1);
+      table_data[idx].method[sizeof(table_data[idx].method) - 1] = '\0';
 
-      strncpy(table_data[i].method, res.name.c_str(), 23);
-      table_data[i].ticks = res.ticks;
-      table_data[i].speedup =
-          (naive_ticks > 0) ? (double)naive_ticks / res.ticks : 1.0;
-      table_data[i].correct = res.correct;
-    }
+      table_data[idx].ticks = res.ticks;
+      table_data[idx].speedup =
+          (base_ticks > 0) ? (double)base_ticks / res.ticks : 1.0;
+      table_data[idx].correct = res.correct;
+    };
+
+    collect(0, res_naive);
+    collect(1, run_test("MatMul opt", matmul_optimized, M, K, N, A, B, ref_C));
+    collect(2, run_test("AVX2 + FMA", matmul_avx2, M, K, N, A, B, ref_C));
+    collect(3, run_test("MatMul reg", matmul_multi_reg, M, K, N, A, B, ref_C));
 
     char size_str[32];
     sprintf(size_str, "%dx%dx%d", M, K, N);
