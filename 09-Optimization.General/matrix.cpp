@@ -106,38 +106,52 @@ void matmul_avx2(int M, int K, int N, const float *__restrict A,
 
 void matmul_multi_reg(int M, int K, int N, const float *__restrict A,
                       const float *__restrict B, float *__restrict C) {
-  // Go through the rows of matrix A with step 2
-  for (int i = 0; i < M; i += 2) {
+  // Go through the rows of matrix A with step 4
+  for (int i = 0; i < M; i += 4) {
     // Go through the cols of matrix B with step 16 (2 registers of 8 floats)
     for (int j = 0; j < N; j += 16) {
 
-      // 4 accumulators for the 2x16 block
-      __m256 acc00 = _mm256_setzero_ps(); // Row i,   cols j  , ..., j+7
-      __m256 acc01 = _mm256_setzero_ps(); // Row i,   cols j+8, ..., j+15
-      __m256 acc10 = _mm256_setzero_ps(); // Row i+1, cols j  , ..., j+7
-      __m256 acc11 = _mm256_setzero_ps(); // Row i+1, cols j+8, ..., j+15
+      // 8 accumulators for the 4x16 block
+      __m256 acc00 = _mm256_setzero_ps();
+      __m256 acc01 = _mm256_setzero_ps();
+      __m256 acc10 = _mm256_setzero_ps();
+      __m256 acc11 = _mm256_setzero_ps();
+      __m256 acc20 = _mm256_setzero_ps();
+      __m256 acc21 = _mm256_setzero_ps();
+      __m256 acc30 = _mm256_setzero_ps();
+      __m256 acc31 = _mm256_setzero_ps();
 
       for (int k = 0; k < K; ++k) {
         // Load elements from A
-        __m256 a0 = _mm256_set1_ps(A[i * K + k]);
+        __m256 a0 = _mm256_set1_ps(A[(i + 0) * K + k]);
         __m256 a1 = _mm256_set1_ps(A[(i + 1) * K + k]);
+        __m256 a2 = _mm256_set1_ps(A[(i + 2) * K + k]);
+        __m256 a3 = _mm256_set1_ps(A[(i + 3) * K + k]);
 
         // Load 16 elements from B
-        __m256 b0 = _mm256_loadu_ps(&B[k * N + j]);
-        __m256 b1 = _mm256_loadu_ps(&B[k * N + j + 8]);
+        __m256 b0 = _mm256_load_ps(&B[k * N + j]);
+        __m256 b1 = _mm256_load_ps(&B[k * N + j + 8]);
 
         // Multiply and accumulate the sum
         acc00 = _mm256_fmadd_ps(a0, b0, acc00);
         acc01 = _mm256_fmadd_ps(a0, b1, acc01);
         acc10 = _mm256_fmadd_ps(a1, b0, acc10);
         acc11 = _mm256_fmadd_ps(a1, b1, acc11);
+        acc20 = _mm256_fmadd_ps(a2, b0, acc20);
+        acc21 = _mm256_fmadd_ps(a2, b1, acc21);
+        acc30 = _mm256_fmadd_ps(a3, b0, acc30);
+        acc31 = _mm256_fmadd_ps(a3, b1, acc31);
       }
 
-      // Upload 4 registers into memory once
-      _mm256_storeu_ps(&C[i * N + j], acc00);
-      _mm256_storeu_ps(&C[i * N + j + 8], acc01);
-      _mm256_storeu_ps(&C[(i + 1) * N + j], acc10);
-      _mm256_storeu_ps(&C[(i + 1) * N + j + 8], acc11);
+      // Upload 4 registers into memory
+      _mm256_store_ps(&C[(i + 0) * N + j], acc00);
+      _mm256_store_ps(&C[(i + 0) * N + j + 8], acc01);
+      _mm256_store_ps(&C[(i + 1) * N + j], acc10);
+      _mm256_store_ps(&C[(i + 1) * N + j + 8], acc11);
+      _mm256_store_ps(&C[(i + 2) * N + j], acc20);
+      _mm256_store_ps(&C[(i + 2) * N + j + 8], acc21);
+      _mm256_store_ps(&C[(i + 3) * N + j], acc30);
+      _mm256_store_ps(&C[(i + 3) * N + j + 8], acc31);
     }
   }
 }
@@ -198,7 +212,7 @@ int main() {
     fill_random(B, K * N);
 
     // Reference
-    memset(ref_C, 0, M * N * sizeof(float));
+    std::fill(ref_C, ref_C + (M * N), 0.0f);
     matmul_naive(M, K, N, A, B, ref_C);
 
     std::vector<Result> results;
