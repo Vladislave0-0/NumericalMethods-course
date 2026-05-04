@@ -12,6 +12,8 @@
 #define YEL "\x1B[33m"
 #define RST "\x1B[0m"
 
+const int BLOCK_SIZE = 32;
+
 struct Result {
   std::string name;
   unsigned long long ticks;
@@ -26,22 +28,25 @@ void fill_random(float *mat, int size) {
 
 void print_table(const char *size_label, const std::vector<Result> &results) {
   printf("\n" YEL "Matrix size: %s" RST "\n", size_label);
-  printf(BLU "┌────────────────┬────────────┬──────────┬─────────┐" RST "\n");
-  printf(BLU "│" RST " %-14s " BLU "│" RST " %-10s " BLU "│" RST " %-8s " BLU
+  printf(BLU "┌─────────────────────┬─────────────┬──────────┬─────────┐" RST
+             "\n");
+  printf(BLU "│" RST " %-19s " BLU "│" RST " %-11s " BLU "│" RST " %-8s " BLU
              "│" RST " %-7s " BLU "│" RST "\n",
          "Method", "Ticks", "Speedup", "Correct");
-  printf(BLU "├────────────────┼────────────┼──────────┼─────────┤" RST "\n");
+  printf(BLU "├─────────────────────┼─────────────┼──────────┼─────────┤" RST
+             "\n");
 
   for (const auto &res : results) {
     const char *speed_color =
         (res.speedup > 1.05) ? GRN : (res.speedup < 0.95 ? RED : RST);
 
-    printf(BLU "│" RST " %-14s " BLU "│" RST " %-10llu " BLU "│"
+    printf(BLU "│" RST " %-19s " BLU "│" RST " %-11llu " BLU "│"
                "%s %-7.2fx " RST BLU "│" RST " %-7s " BLU "│" RST "\n",
            res.name.c_str(), res.ticks, speed_color, res.speedup,
            res.correct ? GRN "  YES  " RST : RED "  FAIL " RST);
   }
-  printf(BLU "└────────────────┴────────────┴──────────┴─────────┘" RST "\n");
+  printf(BLU "└─────────────────────┴─────────────┴──────────┴─────────┘" RST
+             "\n");
 }
 
 void matmul_naive(int M, int K, int N, const float *A, const float *B,
@@ -156,6 +161,57 @@ void matmul_multi_reg(int M, int K, int N, const float *__restrict A,
   }
 }
 
+void matmul_tiled_reg(int M, int K, int N, const float *__restrict A,
+                      const float *__restrict B, float *__restrict C) {
+  for (int bi = 0; bi < M; bi += BLOCK_SIZE) {
+    for (int bk = 0; bk < K; bk += BLOCK_SIZE) {
+      for (int bj = 0; bj < N; bj += BLOCK_SIZE) {
+        for (int i = bi; i < bi + BLOCK_SIZE && i < M; i += 4) {
+          for (int j = bj; j < bj + BLOCK_SIZE && j < N; j += 16) {
+            __m256 acc00, acc01, acc10, acc11, acc20, acc21, acc30, acc31;
+            acc00 = _mm256_load_ps(&C[(i + 0) * N + j]);
+            acc01 = _mm256_load_ps(&C[(i + 0) * N + j + 8]);
+            acc10 = _mm256_load_ps(&C[(i + 1) * N + j]);
+            acc11 = _mm256_load_ps(&C[(i + 1) * N + j + 8]);
+            acc20 = _mm256_load_ps(&C[(i + 2) * N + j]);
+            acc21 = _mm256_load_ps(&C[(i + 2) * N + j + 8]);
+            acc30 = _mm256_load_ps(&C[(i + 3) * N + j]);
+            acc31 = _mm256_load_ps(&C[(i + 3) * N + j + 8]);
+
+            for (int k = bk; k < bk + BLOCK_SIZE && k < K; ++k) {
+              __m256 a0 = _mm256_set1_ps(A[(i + 0) * K + k]);
+              __m256 a1 = _mm256_set1_ps(A[(i + 1) * K + k]);
+              __m256 a2 = _mm256_set1_ps(A[(i + 2) * K + k]);
+              __m256 a3 = _mm256_set1_ps(A[(i + 3) * K + k]);
+
+              __m256 b0 = _mm256_load_ps(&B[k * N + j]);
+              __m256 b1 = _mm256_load_ps(&B[k * N + j + 8]);
+
+              acc00 = _mm256_fmadd_ps(a0, b0, acc00);
+              acc01 = _mm256_fmadd_ps(a0, b1, acc01);
+              acc10 = _mm256_fmadd_ps(a1, b0, acc10);
+              acc11 = _mm256_fmadd_ps(a1, b1, acc11);
+              acc20 = _mm256_fmadd_ps(a2, b0, acc20);
+              acc21 = _mm256_fmadd_ps(a2, b1, acc21);
+              acc30 = _mm256_fmadd_ps(a3, b0, acc30);
+              acc31 = _mm256_fmadd_ps(a3, b1, acc31);
+            }
+
+            _mm256_store_ps(&C[(i + 0) * N + j], acc00);
+            _mm256_store_ps(&C[(i + 0) * N + j + 8], acc01);
+            _mm256_store_ps(&C[(i + 1) * N + j], acc10);
+            _mm256_store_ps(&C[(i + 1) * N + j + 8], acc11);
+            _mm256_store_ps(&C[(i + 2) * N + j], acc20);
+            _mm256_store_ps(&C[(i + 2) * N + j + 8], acc21);
+            _mm256_store_ps(&C[(i + 3) * N + j], acc30);
+            _mm256_store_ps(&C[(i + 3) * N + j + 8], acc31);
+          }
+        }
+      }
+    }
+  }
+}
+
 template <typename F>
 Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
                 const float *B, const float *ref_C, int iterations = 11) {
@@ -232,8 +288,9 @@ int main() {
 
     run_and_store("MatMul naive", matmul_naive);
     run_and_store("MatMul opt", matmul_optimized);
-    run_and_store("AVX2 + FMA", matmul_avx2);
+    run_and_store("MatMul AVX2 + FMA", matmul_avx2);
     run_and_store("MatMul reg", matmul_multi_reg);
+    run_and_store("MatMul reg + tiling", matmul_tiled_reg);
 
     char size_str[32];
     sprintf(size_str, "%dx%dx%d", M, K, N);
