@@ -18,7 +18,7 @@ const int BLOCK_SIZE = 32;
 struct Result {
   std::string name;
   double avg_ticks;
-  double speedup = 1.0;
+  double std_dev;
   bool correct;
 };
 
@@ -29,24 +29,24 @@ void fill_random(float *mat, int size) {
 
 void print_table(const char *size_label, const std::vector<Result> &results) {
   printf("\n" YEL "Matrix size: %s" RST "\n", size_label);
-  printf(BLU "┌─────────────────────┬─────────────┬──────────┬─────────┐" RST
+  printf(BLU "┌─────────────────────┬─────────────┬────────────┬─────────┐" RST
              "\n");
-  printf(BLU "│" RST " %-19s " BLU "│" RST " %-11s " BLU "│" RST " %-8s " BLU
+  printf(BLU "│" RST " %-19s " BLU "│" RST " %-11s " BLU "│" RST " %-9s " BLU
              "│" RST " %-7s " BLU "│" RST "\n",
-         "Method", "Ticks", "Speedup", "Correct");
-  printf(BLU "├─────────────────────┼─────────────┼──────────┼─────────┤" RST
+         "Method", "Avg Ticks", "Std Dev, %", "Correct");
+  printf(BLU "├─────────────────────┼─────────────┼────────────┼─────────┤" RST
              "\n");
 
   for (const auto &res : results) {
-    const char *speed_color =
-        (res.speedup > 1.05) ? GRN : (res.speedup < 0.95 ? RED : RST);
+    double std_dev_p = (res.std_dev / res.avg_ticks) * 100.0;
+    const char *std_dev_color = (std_dev_p > 5.0 ? RED : GRN);
 
-    printf(BLU "│" RST " %-19s " BLU "│" RST " %-11llu " BLU "│"
-               "%s %-7.2fx " RST BLU "│" RST " %-7s " BLU "│" RST "\n",
-           res.name.c_str(), res.avg_ticks, speed_color, res.speedup,
+    printf(BLU "│" RST " %-19s " BLU "│" RST " %-11.2f " BLU "│"
+               "%s %-9.2fx " RST BLU "│" RST " %-7s " BLU "│" RST "\n",
+           res.name.c_str(), res.avg_ticks, std_dev_color, res.std_dev,
            res.correct ? GRN "  YES  " RST : RED "  FAIL " RST);
   }
-  printf(BLU "└─────────────────────┴─────────────┴──────────┴─────────┘" RST
+  printf(BLU "└─────────────────────┴─────────────┴────────────┴─────────┘" RST
              "\n");
 }
 
@@ -282,18 +282,11 @@ int main() {
     matmul_naive(M, K, N, A, B, ref_C);
 
     std::vector<Result> results;
-    unsigned long long base_ticks = 0;
+    unsigned long long base_avg_ticks = 0;
 
     auto run_and_store = [&](std::string name, auto func) {
       Result res =
           run_test(name, func, M, K, N, A, B, ref_C, outer_loops, inner_loops);
-
-      if (results.empty()) // First run => it is matmul_naive
-        base_ticks = res.avg_ticks;
-
-      if (base_ticks > 0)
-        res.speedup = static_cast<double>(base_ticks) / res.avg_ticks;
-
       results.push_back(std::move(res));
     };
 
