@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <immintrin.h>
 #include <string>
@@ -16,7 +17,7 @@ const int BLOCK_SIZE = 32;
 
 struct Result {
   std::string name;
-  unsigned long long ticks;
+  double avg_ticks;
   double speedup = 1.0;
   bool correct;
 };
@@ -42,7 +43,7 @@ void print_table(const char *size_label, const std::vector<Result> &results) {
 
     printf(BLU "│" RST " %-19s " BLU "│" RST " %-11llu " BLU "│"
                "%s %-7.2fx " RST BLU "│" RST " %-7s " BLU "│" RST "\n",
-           res.name.c_str(), res.ticks, speed_color, res.speedup,
+           res.name.c_str(), res.avg_ticks, speed_color, res.speedup,
            res.correct ? GRN "  YES  " RST : RED "  FAIL " RST);
   }
   printf(BLU "└─────────────────────┴─────────────┴──────────┴─────────┘" RST
@@ -214,7 +215,8 @@ void matmul_tiled_reg(int M, int K, int N, const float *__restrict A,
 
 template <typename F>
 Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
-                const float *B, const float *ref_C, int iterations = 11) {
+                const float *B, const float *ref_C, int outer_loops,
+                int inner_loops) {
   int size_C = M * N;
   float *C = (float *)aligned_alloc(64, size_C * sizeof(float));
 
@@ -232,34 +234,42 @@ Result run_test(std::string name, F &&func, int M, int K, int N, const float *A,
   }
 
   std::vector<unsigned long long> results;
-  results.reserve(iterations);
+  results.reserve(outer_loops * inner_loops);
 
-  for (int it = 0; it < iterations; ++it) {
+  for (int out = 0; out < outer_loops; ++out) {
     std::fill(C, C + size_C, 0.0f);
 
-    // Measure tacts
     unsigned long long start = __rdtsc();
-    std::forward<F>(func)(M, K, N, A, B, C);
+    for (int in = 0; in < inner_loops; ++in)
+      func(M, K, N, A, B, C);
     unsigned long long end = __rdtsc();
 
-    results.push_back(end - start);
+    results.push_back(static_cast<double>(end - start) / inner_loops);
   }
 
-  std::sort(results.begin(), results.end());
-  unsigned long long median_ticks = results[iterations / 2];
+  double sum = 0;
+  for (double r : results)
+    sum += r;
+  double avg_ticks = sum / outer_loops;
+
+  double sq_sum = 0;
+  for (double r : results)
+    sq_sum += (r - avg_ticks) * (r - avg_ticks);
+  double std_dev = std::sqrt(sq_sum / outer_loops);
 
   free(C);
-  return {std::move(name), median_ticks, 1.0, all_ok};
+  return {std::move(name), avg_ticks, std_dev, all_ok};
 }
 
 int main() {
   srand(static_cast<unsigned>(time(NULL)));
 
-  std::vector<std::tuple<int, int, int>> dims = {
-      {32, 32, 32},    {64, 64, 64},    {128, 128, 128},
-      {256, 256, 256}, {512, 512, 512}, {1024, 1024, 1024}};
+  std::vector<std::tuple<int, int, int, int, int>> dims = {
+      {32, 32, 32, 200, 2000},   {64, 64, 64, 200, 800},
+      {128, 128, 128, 100, 250}, {256, 256, 256, 50, 250},
+      {512, 512, 512, 50, 10},   {1024, 1024, 1024, 25, 10}};
 
-  for (const auto &[M, K, N] : dims) {
+  for (const auto &[M, K, N, outer_loops, inner_loops] : dims) {
     float *A = (float *)aligned_alloc(64, M * K * sizeof(float));
     float *B = (float *)aligned_alloc(64, K * N * sizeof(float));
     float *ref_C = (float *)aligned_alloc(64, M * N * sizeof(float));
@@ -275,13 +285,14 @@ int main() {
     unsigned long long base_ticks = 0;
 
     auto run_and_store = [&](std::string name, auto func) {
-      Result res = run_test(name, func, M, K, N, A, B, ref_C);
+      Result res =
+          run_test(name, func, M, K, N, A, B, ref_C, outer_loops, inner_loops);
 
       if (results.empty()) // First run => it is matmul_naive
-        base_ticks = res.ticks;
+        base_ticks = res.avg_ticks;
 
       if (base_ticks > 0)
-        res.speedup = static_cast<double>(base_ticks) / res.ticks;
+        res.speedup = static_cast<double>(base_ticks) / res.avg_ticks;
 
       results.push_back(std::move(res));
     };
