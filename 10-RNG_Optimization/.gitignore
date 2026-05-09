@@ -1,2 +1,4 @@
 obj/
 compile_commands.json
+monte_carlo_vec
+verify_bitwise
