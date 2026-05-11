@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-extern float logf(float);
+extern float logf_scalar(float);
 
 test_result verify_flags(float x, float exp_res, int exp_errno, int exp_flag,
                          const char *label) {
@@ -18,7 +18,7 @@ test_result verify_flags(float x, float exp_res, int exp_errno, int exp_flag,
   errno = 0;
   feclearexcept(FE_ALL_EXCEPT);
 
-  float actual = logf(x);
+  float actual = logf_scalar(x);
 
   // Переводим в строковое представление результата
   if (isnan(actual))
@@ -136,7 +136,7 @@ void test_intervals() {
       if (x <= 0)
         continue;
 
-      float actual = logf(x);
+      float actual = logf_scalar(x);
       double expected = log((double)x);
       double ulp = get_ulp(actual, expected);
 
@@ -157,4 +157,10 @@ void test_intervals() {
          max_ulp <= MAX_RELEVANT_ULP ? GRN "[PASS]" : RED "[FAIL]");
   printf("    Intervals Summary: %d total %s[%d failed]" RST "\n",
          total_intervals, (failed_intervals > 0 ? RED : GRN), failed_intervals);
+}
+
+int main() {
+  test_edge_cases();
+  test_precision();
+  test_intervals();
 }

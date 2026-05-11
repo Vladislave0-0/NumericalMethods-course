@@ -13,8 +13,8 @@ void print_table(test_result *results, int count) {
     printf(BLU "│" RST " %-14s " BLU "│" RST " %-12s " BLU "│" RST " %-6s " BLU
                "│" RST " %-6s " BLU "│" RST " %s%-9s" RST BLU "│" RST "\n",
            results[i].label, results[i].output,
-           results[i].errno_ok ? "  OK" : RED "  ERR" RST,
-           results[i].flag_ok ? "  OK" : RED "  ERR" RST,
+           results[i].errno_ok ? "  OK" : RED "  ERR " RST,
+           results[i].flag_ok ? "  OK" : RED "  ERR " RST,
            results[i].status_ok ? GRN : RED,
            results[i].status_ok ? "  PASS" : "  FAIL");
   }

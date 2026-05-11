@@ -1,21 +1,27 @@
-TARGET = ./bin/test_runner
-
 CC = gcc
-CFLAGS = -Wall -Wextra -I./include -O2
+CFLAGS = -Wall -Wextra -I./include -O3 -mavx2 -mfma
 LDFLAGS = -lm
 
 SRC_DIR = ./src
 OBJ_DIR = ./obj
 BIN_DIR = ./bin
-LOGF_OBJ = ./lib/logf.o
+LIB_DIR = ./lib
 
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
+TARGET_SCALAR = $(BIN_DIR)/test_scalar
+TARGET_VECTOR = $(BIN_DIR)/test_vector
 
-all: $(BIN_DIR) $(OBJ_DIR) $(TARGET)
+LIB_SCALAR = $(LIB_DIR)/logf_scalar.o
+LIB_VECTOR = $(LIB_DIR)/logf_avx2.o $(LIB_DIR)/logf_scalar.o
 
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) $(LOGF_OBJ) -o $(TARGET) $(LDFLAGS)
+COMMON_OBJS = $(OBJ_DIR)/graphics.o
+
+all: $(BIN_DIR) $(OBJ_DIR) $(TARGET_SCALAR) $(TARGET_VECTOR)
+
+$(TARGET_SCALAR): $(OBJ_DIR)/test_scalar.o $(COMMON_OBJS)
+	$(CC) $(CFLAGS) $^ $(LIB_SCALAR) -o $@ $(LDFLAGS)
+
+$(TARGET_VECTOR): $(OBJ_DIR)/test_vector.o $(COMMON_OBJS)
+	$(CC) $(CFLAGS) $^ $(LIB_VECTOR) -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -27,6 +33,6 @@ $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET)
+	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
 .PHONY: all clean
