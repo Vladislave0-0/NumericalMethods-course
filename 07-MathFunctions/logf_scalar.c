@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <fenv.h>
-#include <math.h>
 #include <stdint.h>
 
 typedef union {
@@ -8,7 +7,7 @@ typedef union {
   uint32_t i;
 } float_conv;
 
-float logf(float x) {
+float logf_scalar(float x) {
   // Константы из fdlibm
   static const float ln2_hi = 6.9313812256e-01f; /* 0x3f317180 */
   static const float ln2_lo = 9.0580006145e-06f; /* 0x3717f7d1 */
@@ -27,17 +26,17 @@ float logf(float x) {
   uint32_t abs_ix = ix & 0x7fffffff;
 
   // 1. Фильтрация
-if (abs_ix == 0) { // Если x = +0.0 или x = -0.0
-  errno = ERANGE;
-  feraiseexcept(FE_DIVBYZERO);
-  return -1.0f / 0.0f;
-}
+  if (abs_ix == 0) { // Если x = +0.0 или x = -0.0
+    errno = ERANGE;
+    feraiseexcept(FE_DIVBYZERO);
+    return -1.0f / 0.0f;
+  }
 
-if (ix >= 0x80000000) { // Если x <= 0
-  errno = EDOM;
-  feraiseexcept(FE_INVALID);
-  return (x - x) / 0.0f; // NaN
-}
+  if (ix >= 0x80000000) { // Если x <= 0
+    errno = EDOM;
+    feraiseexcept(FE_INVALID);
+    return (x - x) / 0.0f; // NaN
+  }
 
   // Если x = +inf или NaN
   if (ix >= 0x7f800000)
@@ -75,10 +74,10 @@ if (ix >= 0x80000000) { // Если x <= 0
            z * (Lg2 + z * (Lg3 + z * (Lg4 + z * (Lg5 + z * (Lg6 + z * Lg7))))));
 
   // 4. Реконструкция
-double hfsq = 0.5 * df * df;
-double res =
-    (double)subnormal_bits * ln2_hi +
-    ((double)subnormal_bits * ln2_lo + (s * (hfsq + R) + (df - hfsq)));
+  double hfsq = 0.5 * df * df;
+  double res =
+      (double)subnormal_bits * ln2_hi +
+      ((double)subnormal_bits * ln2_lo + (s * (hfsq + R) + (df - hfsq)));
 
   return (float)res;
 }
