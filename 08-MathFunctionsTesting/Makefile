@@ -8,7 +8,7 @@ BIN_DIR = ./bin
 LIB_DIR = ./lib
 
 TARGET_SCALAR = $(BIN_DIR)/test_scalar
-TARGET_VECTOR = $(BIN_DIR)/test_vector
+TARGET_VECTOR = $(BIN_DIR)/test_avx2
 
 LIB_SCALAR = $(LIB_DIR)/logf_scalar.o
 LIB_VECTOR = $(LIB_DIR)/logf_avx2.o $(LIB_DIR)/logf_scalar.o
@@ -20,7 +20,7 @@ all: $(BIN_DIR) $(OBJ_DIR) $(TARGET_SCALAR) $(TARGET_VECTOR)
 $(TARGET_SCALAR): $(OBJ_DIR)/test_scalar.o $(COMMON_OBJS)
 	$(CC) $(CFLAGS) $^ $(LIB_SCALAR) -o $@ $(LDFLAGS)
 
-$(TARGET_VECTOR): $(OBJ_DIR)/test_vector.o $(COMMON_OBJS)
+$(TARGET_VECTOR): $(OBJ_DIR)/test_avx2.o $(COMMON_OBJS)
 	$(CC) $(CFLAGS) $^ $(LIB_VECTOR) -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
