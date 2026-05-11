@@ -111,51 +111,54 @@ BenchResult measure_throughput(Func &&func, const std::vector<Ty> &data) {
 }
 
 template <typename Func, typename Ty>
+BenchResult measure_vector(Func &&func, const std::vector<Ty> &data) {
+  const size_t outer_iterations = 10000;
+  const size_t inner_batch = 10;
+  const size_t n = data.size();
+
+  std::vector<Ty> results(n);
+  std::vector<uint64_t> samples;
+  samples.reserve(outer_iterations);
+
+  func(data.data(), results.data(), (int)n);
+
+  for (size_t i = 0; i < outer_iterations; ++i) {
+    _mm_mfence();
+    uint64_t start = __rdtsc();
+
+    for (size_t j = 0; j < inner_batch; ++j) {
+      func(data.data(), results.data(), (int)n);
+      asm volatile("" : : "g"(results.data()) : "memory");
+    }
+
+    unsigned int aux;
+    uint64_t end = __rdtscp(&aux);
+    _mm_lfence();
+
+    samples.push_back(end - start);
+  }
+
+  return Stats::calculate(samples, n * inner_batch);
+}
+
+template <typename Func, typename Ty>
 static void print(const std::string &label, Func &&func,
                   const std::vector<Ty> &data) {
-  // Определяем, является ли функция векторной (принимает 3 аргумента)
-  // или скалярной (принимает 1 аргумент)
-  constexpr bool is_vector = !std::is_invocable_v<Func, Ty>;
+  constexpr bool is_vector = std::is_invocable_v<Func, const Ty *, Ty *, int>;
 
   std::cout << YEL << label << RST << std::endl;
-
-  auto run_latency = [&]() {
-    if constexpr (is_vector) {
-      auto wrapper = [&](Ty x) {
-        alignas(32) Ty src[8];
-        alignas(32) Ty dst[8];
-        for (int i = 0; i < 8; ++i)
-          src[i] = x;
-        func(src, dst, 8);
-        return dst[0];
-      };
-      return measure_latency(wrapper, data).mean / 8.0;
-    } else {
-      return measure_latency(func, data).mean;
-    }
-  };
-
-  auto run_throughput = [&]() {
-    if constexpr (is_vector) {
-      auto wrapper = [&](Ty x) {
-        alignas(32) Ty src[8];
-        alignas(32) Ty dst[8];
-        for (int i = 0; i < 8; ++i)
-          src[i] = x;
-        func(src, dst, 8);
-        return dst[0];
-      };
-      return measure_throughput(wrapper, data).mean / 8.0;
-    } else {
-      return measure_throughput(func, data).mean;
-    }
-  };
-
-  double lat_mean = run_latency();
-  double thr_mean = run_throughput();
-
-  std::cout << "[LATENCY]    " << lat_mean << " CPE\n";
-  std::cout << "[THROUGHPUT] " << thr_mean << " CPE\n\n";
+  if constexpr (is_vector) {
+    BenchResult res = measure_vector(func, data);
+    std::cout << "[THROUGHPUT] " << res.mean << " CPE (+- " << res.stddev
+              << ")\n\n";
+  } else {
+    BenchResult lat = measure_latency(func, data);
+    BenchResult thr = measure_throughput(func, data);
+    std::cout << "[LATENCY]    " << lat.mean << " CPE (+- " << lat.stddev
+              << ")\n";
+    std::cout << "[THROUGHPUT] " << thr.mean << " CPE (+- " << thr.stddev
+              << ")\n\n";
+  }
 }
 
 } // namespace perf

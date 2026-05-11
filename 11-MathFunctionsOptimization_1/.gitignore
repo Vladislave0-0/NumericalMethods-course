@@ -1,4 +1,4 @@
 obj/
 compile_commands.json
-bench_tester
+test
 .cache/
