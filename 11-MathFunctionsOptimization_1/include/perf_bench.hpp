@@ -113,15 +113,49 @@ BenchResult measure_throughput(Func &&func, const std::vector<Ty> &data) {
 template <typename Func, typename Ty>
 static void print(const std::string &label, Func &&func,
                   const std::vector<Ty> &data) {
+  // Определяем, является ли функция векторной (принимает 3 аргумента)
+  // или скалярной (принимает 1 аргумент)
+  constexpr bool is_vector = !std::is_invocable_v<Func, Ty>;
+
   std::cout << YEL << label << RST << std::endl;
 
-  auto latency = measure_latency(std::forward<Func>(func), data);
-  auto throughput = measure_throughput(std::forward<Func>(func), data);
+  auto run_latency = [&]() {
+    if constexpr (is_vector) {
+      auto wrapper = [&](Ty x) {
+        alignas(32) Ty src[8];
+        alignas(32) Ty dst[8];
+        for (int i = 0; i < 8; ++i)
+          src[i] = x;
+        func(src, dst, 8);
+        return dst[0];
+      };
+      return measure_latency(wrapper, data).mean / 8.0;
+    } else {
+      return measure_latency(func, data).mean;
+    }
+  };
 
-  std::cout << "[LATENCY]    " << latency.mean
-            << " CPE (stddev: " << latency.stddev << ")\n";
-  std::cout << "[THROUGHPUT] " << throughput.mean
-            << " CPE (stddev: " << throughput.stddev << ")\n\n";
+  auto run_throughput = [&]() {
+    if constexpr (is_vector) {
+      auto wrapper = [&](Ty x) {
+        alignas(32) Ty src[8];
+        alignas(32) Ty dst[8];
+        for (int i = 0; i < 8; ++i)
+          src[i] = x;
+        func(src, dst, 8);
+        return dst[0];
+      };
+      return measure_throughput(wrapper, data).mean / 8.0;
+    } else {
+      return measure_throughput(func, data).mean;
+    }
+  };
+
+  double lat_mean = run_latency();
+  double thr_mean = run_throughput();
+
+  std::cout << "[LATENCY]    " << lat_mean << " CPE\n";
+  std::cout << "[THROUGHPUT] " << thr_mean << " CPE\n\n";
 }
 
 } // namespace perf
