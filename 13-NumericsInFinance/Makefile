@@ -3,8 +3,8 @@ CXXFLAGS = -O3 -mavx2 -mfma -fopenmp -I.
 
 LDFLAGS = -lsleef -lm
 
-TARGET = calc
-SRCS = calc.cpp
+TARGET = call_BS
+SRCS = call_BS.cpp
 OBJS_LIB = lib/logf_avx2.o lib/logf_scalar.o
 
 all: $(TARGET)
